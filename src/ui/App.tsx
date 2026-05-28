@@ -8,6 +8,8 @@ import { styles } from "./styles";
 import { ChatBubble } from "./components/ChatBubble";
 import type { UIMessage } from "./components/ChatBubble";
 import { StreamBar } from "./components/StreamBar";
+import systemPromptRaw from "../prompts/systemPrompt.md?raw";
+import { renderPrompt } from "../prompts/promptLoader";
 
 /**
  * 预设修正指令及对应的剪枝 (pruning) 策略：
@@ -40,15 +42,34 @@ function uiMessagesToChatMessages(msgs: UIMessage[]): ChatMessage[] {
 }
 
 /**
+ * 构造 system prompt：加载模板并替换 {{current_date}}、{{timezone}}、{{user_profile}} 变量。
+ * 每次调用均实时渲染，确保日期/时区始终正确。
+ */
+function buildSystemPrompt(): string {
+  const now = new Date();
+  return renderPrompt(systemPromptRaw, {
+    current_date: now.toISOString().split("T")[0],
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    user_profile: "暂无用户画像（用户尚未填写偏好信息）",
+  });
+}
+
+/**
  * 启动 DeepSeek 流式请求，将返回的 stream 交给 useStreamResponse 消费。
- * 所有错误由 useStreamResponse 内部的 catch 块处理。
+ * systemPrompt 始终作为 messages[0]（"定海神针"），所有错误由 useStreamResponse 内部的 catch 块处理。
  */
 function startDeepSeekStream(
   messages: UIMessage[],
   start: (source: StreamSource) => void
 ) {
   const chatMessages = uiMessagesToChatMessages(messages);
-  streamDeepSeekChat({ messages: chatMessages })
+  const systemMsg: ChatMessage = {
+    id: "system-prompt",
+    role: "system",
+    content: buildSystemPrompt(),
+    created_at: new Date().toISOString(),
+  };
+  streamDeepSeekChat({ messages: [systemMsg, ...chatMessages] })
     .then((stream) => start({ type: "stream", stream }))
     .catch((err) => {
       // 如果 streamDeepSeekChat 本身失败（如 API key 未配置），
