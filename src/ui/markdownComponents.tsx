@@ -76,4 +76,63 @@ export const markdownComponents = {
       {children}
     </blockquote>
   ),
+  table: ({ children, ...props }: React.ComponentPropsWithoutRef<"table">) => (
+    <table
+      style={{
+        width: "100%",
+        borderCollapse: "collapse",
+        borderRadius: 6,
+        overflow: "hidden",
+        border: "1px solid #334155",
+        margin: "8px 0",
+        fontSize: 13,
+      }}
+      {...props}
+    >
+      {children}
+    </table>
+  ),
+  thead: ({ children, ...props }: React.ComponentPropsWithoutRef<"thead">) => (
+    <thead style={{ backgroundColor: "#0f172a" }} {...props}>
+      {children}
+    </thead>
+  ),
+  tbody: ({ children, ...props }: React.ComponentPropsWithoutRef<"tbody">) => (
+    <tbody {...props}>{children}</tbody>
+  ),
+  tr: ({ children, ...props }: React.ComponentPropsWithoutRef<"tr">) => (
+    <tr
+      style={{ borderBottom: "1px solid #1e293b" }}
+      {...props}
+    >
+      {children}
+    </tr>
+  ),
+  th: ({ children, ...props }: React.ComponentPropsWithoutRef<"th">) => (
+    <th
+      style={{
+        textAlign: "left",
+        padding: "6px 10px",
+        fontWeight: 700,
+        color: "#fbbf24",
+        borderBottom: "2px solid #334155",
+      }}
+      {...props}
+    >
+      {children}
+    </th>
+  ),
+  td: ({ children, ...props }: React.ComponentPropsWithoutRef<"td">) => (
+    <td
+      style={{
+        textAlign: "left",
+        padding: "6px 10px",
+        lineHeight: 1.5,
+        color: "#e2e8f0",
+      }}
+      {...props}
+    >
+      {children}
+    </td>
+  ),
 };

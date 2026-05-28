@@ -58,6 +58,8 @@ export default function App() {
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [input, setInput] = useState("");
   const [useMock, setUseMock] = useState(false);
+  const [profilePreview, setProfilePreview] = useState<UserProfile>(EMPTY_PROFILE);
+  const [showProfile, setShowProfile] = useState(false);
   const streamResult = useStreamResponse();
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -114,6 +116,7 @@ export default function App() {
     });
     contextWindowRef.current = result.window;
     lastAssistantRef.current = null; // 已消费，清空等待下一轮流结束回填
+    setProfilePreview(result.window.profileData); // 同步到调试面板
 
     const modelMessages = toModelMessages(result.window);
 
@@ -253,6 +256,46 @@ export default function App() {
           )}
         </div>
       </header>
+
+      {/* 画像预览面板（调试用） */}
+      <div style={{
+        borderBottom: showProfile ? "1px solid #1e293b" : "none",
+      }}>
+        <button
+          onClick={() => setShowProfile((v) => !v)}
+          style={{
+            width: "100%",
+            padding: "6px 20px",
+            fontSize: 12,
+            color: "#64748b",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            textAlign: "left",
+            fontFamily: "monospace",
+          }}
+        >
+          {showProfile ? "▾" : "▸"} 画像预览 (UserProfile)
+        </button>
+        {showProfile && (
+          <pre style={{
+            margin: "0 20px 10px",
+            padding: "10px 14px",
+            fontSize: 11,
+            fontFamily: "monospace",
+            color: "#94a3b8",
+            backgroundColor: "#0a101f",
+            borderRadius: 6,
+            border: "1px solid #1e293b",
+            maxHeight: 200,
+            overflowY: "auto",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-all",
+          }}>
+            {JSON.stringify(profilePreview, null, 2)}
+          </pre>
+        )}
+      </div>
 
       {/* 聊天区域 */}
       <main style={styles.chatArea}>

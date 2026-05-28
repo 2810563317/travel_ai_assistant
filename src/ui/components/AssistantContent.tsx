@@ -1,5 +1,6 @@
 import React from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { UIMessage } from "./ChatBubble";
 import { markdownComponents } from "../markdownComponents";
 import { sanitizeStreamingMarkdown } from "../sanitizeMarkdown";
@@ -39,7 +40,7 @@ export function AssistantContent({
       // 遇到卡片或错误：先 flush 累积的文本
       if (textBuffer) {
         elements.push(
-          <ReactMarkdown key={`t${elements.length}`} components={markdownComponents}>
+          <ReactMarkdown key={`t${elements.length}`} components={markdownComponents} remarkPlugins={[remarkGfm]}>
             {textBuffer}
           </ReactMarkdown>,
         );
@@ -58,7 +59,7 @@ export function AssistantContent({
   if (textBuffer) {
     const finalText = isStreaming ? sanitizeStreamingMarkdown(textBuffer) : textBuffer;
     elements.push(
-      <ReactMarkdown key={`t${elements.length}`} components={markdownComponents}>
+      <ReactMarkdown key={`t${elements.length}`} components={markdownComponents} remarkPlugins={[remarkGfm]}>
         {finalText}
       </ReactMarkdown>,
     );
