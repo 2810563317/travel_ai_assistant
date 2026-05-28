@@ -1,0 +1,90 @@
+{
+  "type": "function",
+  "function": {
+    "name": "calculate_budget",
+    "description": "Calculate estimated travel budget based on destination, duration, travelers, and travel style.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "destination": {
+          "type": "string",
+          "description": "Travel destination city or country."
+        },
+        "days": {
+          "type": "integer",
+          "description": "Number of travel days."
+        },
+        "adults_count": {
+          "type": "integer",
+          "description": "Number of adult travelers."
+        },
+        "children_count": {
+          "type": "integer",
+          "description": "Number of child travelers."
+        },
+        "travel_style": {
+          "type": "string",
+          "enum": [
+            "budget",
+            "standard",
+            "comfortable",
+            "luxury"
+          ],
+          "description": "Travel spending style. If the user's preference is unclear, default to 'standard'."
+        },
+        "hotel_level": {
+          "type": "string",
+          "enum": [
+            "hostel",
+            "economy",
+            "mid_range",
+            "high_end",
+            "luxury"
+          ],
+          "description": "Preferred hotel level.This parameter has higher priority than travel_style specifically for accommodation costs."
+        },
+        "transportation_mode": {
+          "type": "string",
+          "enum": [
+            "public_transport",
+            "taxi",
+            "rental_car",
+            "mixed"
+          ],
+          "description": "Main transportation method during the trip."
+        },
+        "include_flight": {
+          "type": "boolean",
+          "description": "Whether flight cost should be included."
+        },
+        "include_food": {
+          "type": "boolean",
+          "description": "Whether food expenses should be included."
+        },
+        "include_tickets": {
+          "type": "boolean",
+          "description": "Whether attraction ticket costs should be included."
+        },
+        "currency": {
+          "type": "string",
+          "enum": [
+            "CNY",
+            "USD",
+            "JPY",
+            "EUR",
+            "GBP",
+            "KRW",
+            "HKD",
+            "SGD"
+          ],
+          "description": "Currency code following ISO 4217 standard. If not specified, default to the local currency of the destination."
+        }
+      },
+      "required": [
+        "destination",
+        "days",
+        "adults_count"
+      ]
+    }
+  }
+}

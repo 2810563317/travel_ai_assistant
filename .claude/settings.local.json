@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(npx vite *)",
+      "Bash(node -e \"console.log\\(require\\('react-markdown/package.json'\\).version\\)\")",
+      "Bash(npm run *)"
+    ]
+  }
+}

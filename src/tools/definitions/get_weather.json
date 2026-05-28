@@ -1,0 +1,34 @@
+{
+  "type": "function",
+  "function": {
+    "name": "get_weather",
+    "description": "Get weather information for travel planning.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "location": {
+          "type": "string",
+          "description": "Destination city or place name."
+        },
+        "start_date": {
+          "type": "string",
+          "description": "Start date in YYYY-MM-DD format."
+        },
+        "days": {
+          "type": "integer",
+          "description": "Number of forecast days, up to 14 days."
+        },
+        "weather_type": {
+          "type": "string",
+          "enum": [
+            "current",
+            "hourly",
+            "daily"
+          ],
+          "description": "Type of weather data."
+        }
+      },
+      "required": ["location"]
+    }
+  }
+}
