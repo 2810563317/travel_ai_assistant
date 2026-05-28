@@ -7,6 +7,8 @@ import { estimateMessageTokens } from "./tokenEstimator";
 import { measureRemovalGroup } from "./atomicBoundary";
 import { mergeProfile } from "../profile/mergeProfile";
 import { formatUserProfile } from "../profile/formatter";
+import userProfilePromptRaw from "../prompts/userProfilePrompt.md?raw";
+import { renderPrompt } from "../prompts/promptLoader";
 
 /**
  * 轻量级关键事实提取 —— 比 summarizeMessages 更轻量。
@@ -36,32 +38,14 @@ export async function updateProfileQuickly(
   messages: ChatMessage[],
   currentProfile: UserProfile
 ): Promise<ProfilePatch | null> {
-  // 实际接入时使用如下 prompt 模板（示意，非最终）：
+  // 接入真实 LLM 时使用已加载的 userProfilePromptRaw 模板：
   //
-  // 你是用户画像更新器。分析即将被丢弃的对话消息，提取用户的**新增或变更**偏好/约束。
-  // 仅返回需要更新的字段，不要重复已有值。低置信度的推断直接忽略。
-  //
-  // 当前画像：{JSON.stringify(currentProfile)}
-  // 待分析消息：{formatMessages(messages)}
-  //
-  // 返回严格的 JSON，格式：
-  // {
-  //   "preferences": {                    // 可选：偏好变更
-  //     "travel_style": "budget",         // budget | standard | comfortable | luxury
-  //     "hotel_level": "mid_range",       // hostel | economy | mid_range | high_end | luxury
-  //     "transport_preference": "taxi",   // public_transport | taxi | rental_car | walking | mixed
-  //     "dietary_restrictions": ["halal"],
-  //     "food_allergies": ["peanuts"],
-  //     "preferred_currency": "JPY",
-  //     "language": "zh-CN"
-  //   },
-  //   "constraints": {                    // 可选：约束变更
-  //     "avoid_places": ["museums"],
-  //     "mobility_limitations": ["stairs"],
-  //     "max_walking_minutes_per_day": 60,
-  //     "needs_child_friendly_plan": true
-  //   }
-  // }
+  //   const systemPrompt = renderPrompt(userProfilePromptRaw, {
+  //     current_profile: JSON.stringify(currentProfile, null, 2),
+  //   });
+  //   const userContent = messages.map(m => `${m.role}: ${(m as any).content ?? ""}`).join("\n\n");
+  //   const response = await fastLlm.invoke({ system: systemPrompt, messages: [{ role: "user", content: userContent }] });
+  //   return JSON.parse(response) as ProfilePatch;
 
   return null;
 }

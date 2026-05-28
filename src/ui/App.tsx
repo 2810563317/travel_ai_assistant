@@ -11,6 +11,7 @@ import systemPromptRaw from "../prompts/systemPrompt.md?raw";
 import { renderPrompt } from "../prompts/promptLoader";
 import { buildInitialWindow, toModelMessages, updateMessage } from "../context";
 import type { ContextWindow } from "../context";
+import { formatUserProfile } from "../profile";
 
 /**
  * 预设修正指令及对应的剪枝 (pruning) 策略：
@@ -38,14 +39,18 @@ const EMPTY_PROFILE: UserProfile = {
 
 /**
  * 构造 system prompt：加载模板并替换 {{current_date}}、{{timezone}}、{{user_profile}} 变量。
- * 每次调用均实时渲染，确保日期/时区始终正确。
+ * 接收 UserProfile，通过 formatUserProfile 渲染真实画像数据。空画像时给出友好提示。
  */
-function buildSystemPrompt(): string {
+function buildSystemPrompt(profile: UserProfile): string {
   const now = new Date();
+  const profileText = formatUserProfile(profile);
   return renderPrompt(systemPromptRaw, {
     current_date: now.toISOString().split("T")[0],
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    user_profile: "暂无用户画像（用户尚未填写偏好信息）",
+    user_profile:
+      profileText === "[User Profile]"
+        ? "暂无用户画像（用户尚未填写偏好信息）"
+        : profileText,
   });
 }
 
@@ -59,7 +64,7 @@ export default function App() {
   // ── Context 引擎 ──
   const contextWindowRef = useRef<ContextWindow>(
     buildInitialWindow({
-      systemPrompt: buildSystemPrompt(),
+      systemPrompt: buildSystemPrompt(EMPTY_PROFILE),
       userProfile: EMPTY_PROFILE,
       memorySummary: undefined,
     })
@@ -97,6 +102,12 @@ export default function App() {
    * systemPrompt 始终位于 messages[0]（"定海神针"），后续各层按 5 层结构排列。
    */
   async function sendToApi(userChatMsg: ChatMessage) {
+    // 每次发送前用最新画像刷新 systemPrompt（画像可能在上一轮 hardTruncate 中被 applyProfilePatch 更新）
+    contextWindowRef.current.systemPrompt = {
+      ...contextWindowRef.current.systemPrompt,
+      content: buildSystemPrompt(contextWindowRef.current.profileData),
+    };
+
     const result = await updateMessage(contextWindowRef.current, {
       userMessage: userChatMsg,
       assistantResponse: lastAssistantRef.current ?? undefined,
