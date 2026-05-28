@@ -23,25 +23,26 @@ src/
 
 ```
 用户输入 → App.tsx (handleSend)
-  → useStreamResponse.start(source)
-    → fetch(url) 或 直接消费 ReadableStream
+  → sendToApi(userChatMsg)
+    → updateMessage(window, { userMessage, assistantResponse })
+      → 1. latestUser 推入 recentHistory
+      → 2. assistantResponse 推入 recentHistory
+      → 3. 新消息成为 latestUser
+      → 4. 若 recentHistory 超限 → compressRecentHistory()
+      → 5. 若仍超限 → hardTruncate()
+      → 6. toModelMessages(window) → 5 层 ChatMessage[]
+    → streamDeepSeekChat({ messages })
+      → POST /api/deepseek (Vite proxy → DeepSeek API)
+    → useStreamResponse.start(source)
       → parseSSEChunk()     — SSE 帧解析
       → processFrames()     — JSON 卡片检测状态机
       → scheduleFlush()     — rAF 节流
       → flushChunks()       — setState 合并
   → ChatBubble + AssistantContent → Markdown 渲染 + 卡片渲染
-```
 
-（服务端上下文管理链路，当前通过 API 端点间接调用）：
-
-```
-updateMessage(currentWindow, incoming)
-  → 1. latestUser 推入 recentHistory
-  → 2. toolResults 预处理（preprocessToolMessages）
-  → 3. 新消息成为 latestUser
-  → 4. 若 recentHistory 超限 → compressRecentHistory()
-  → 5. 若仍超限 → hardTruncate()
-  → 返回更新后的 ContextWindow
+流结束:
+  → setMessages 固化 assistant 消息
+  → lastAssistantRef = assistant ChatMessage (供下一轮 updateMessage 消费)
 ```
 
 ## Prompt Flow

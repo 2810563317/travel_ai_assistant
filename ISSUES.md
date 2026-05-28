@@ -27,4 +27,4 @@
 ## 待调研
 
 [ ] DeepSeek API 生产环境需搭建后端代理（Vite proxy 仅 dev 有效） — 2026-05-28
-[ ] Context 窗口引擎（`src/context/`）目前仅存在于前端代码中，需迁移到服务端 — 2026-05-28
+[x] Context 窗口引擎（`src/context/`）已接入前端 API 调用链路（App.tsx → updateMessage → toModelMessages → API） — 2026-05-28

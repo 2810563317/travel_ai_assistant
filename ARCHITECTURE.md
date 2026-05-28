@@ -6,13 +6,37 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │                          Browser (Vite + React)                      │
 │                                                                      │
+│  ┌──────────┐    ┌──────────────────────────────────────────────┐   │
+│  │ App.tsx  │───▶│  updateMessage() — 上下文窗口编排器（浏览器端）│   │
+│  │ (UI 主控) │    │                                              │   │
+│  └──────────┘    │  ┌────────────┐  ┌────────────┐              │   │
+│        │         │  │ Compressor │  │ HardTrunc  │              │   │
+│        │         │  │ (压缩)      │  │ (硬截断)    │              │   │
+│        │         │  └────────────┘  └────────────┘              │   │
+│        │         │                                              │   │
+│        │         │  ┌────────────┐  ┌────────────┐              │   │
+│        │         │  │ Atomic     │  │ Token      │              │   │
+│        │         │  │ Boundary   │  │ Estimator  │              │   │
+│        │         │  └────────────┘  └────────────┘              │   │
+│        │         │                                              │   │
+│        │         │  ┌──────────────────────────────────────┐    │   │
+│        │         │  │ UserProfile                           │    │   │
+│        │         │  │ mergeProfile() + formatUserProfile() │    │   │
+│        │         │  └──────────────────────────────────────┘    │   │
+│        │         └──────────────────────────────────────────────┘   │
+│        │                         │                                   │
+│        │                         ▼                                   │
+│        │         ┌──────────────────────────────────────────────┐   │
+│        │         │  toModelMessages() → 5 层结构 ChatMessage[]  │   │
+│        │         └──────────────────────────────────────────────┘   │
+│        │                         │                                   │
+│        ▼                         ▼                                   │
 │  ┌──────────┐    ┌──────────────────────┐    ┌───────────────────┐  │
-│  │ App.tsx  │───▶│ useStreamResponse.ts │───▶│  SSE Parser       │  │
-│  │ (UI 主控) │    │ (流式 Hook)          │    │  JSON Detector    │  │
-│  └──────────┘    └──────────────────────┘    │  rAF Throttle     │  │
-│        │                                      └───────────────────┘  │
-│        │                                                             │
-│        ▼                                                             │
+│  │ChatBubble│    │ useStreamResponse.ts │───▶│  SSE Parser       │  │
+│  │Assistant │    │ (流式 Hook)          │    │  JSON Detector    │  │
+│  │Content   │    └──────────────────────┘    │  rAF Throttle     │  │
+│  └──────────┘                               └───────────────────┘  │
+│                                                                      │
 │  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐      │
 │  │ChatBubble│    │ Card     │    │ StreamBar│    │ Styles   │      │
 │  │Assistant │    │ Widget   │    │          │    │          │      │
@@ -20,36 +44,15 @@
 │  └──────────┘    └──────────┘    └──────────┘    └──────────┘      │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
-                                    │ HTTP POST / SSE
+                                    │ POST /api/deepseek (Vite proxy)
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                       Server (待接入)                                │
+│                       External                                       │
 │                                                                      │
 │  ┌──────────┐    ┌──────────────────────────────────────────────┐   │
-│  │ API Route│───▶│  updateMessage() — 上下文窗口编排器            │   │
-│  └──────────┘    │                                              │   │
-│                  │  ┌────────────┐  ┌────────────┐              │   │
-│                  │  │ Compressor │  │ HardTrunc  │              │   │
-│                  │  │ (压缩)      │  │ (硬截断)    │              │   │
-│                  │  └────────────┘  └────────────┘              │   │
-│                  │                                              │   │
-│                  │  ┌────────────┐  ┌────────────┐              │   │
-│                  │  │ Atomic     │  │ Token      │              │   │
-│                  │  │ Boundary   │  │ Estimator  │              │   │
-│                  │  └────────────┘  └────────────┘              │   │
-│                  └──────────────────────────────────────────────┘   │
-│                                    │                                 │
-│                                    ▼                                 │
-│                  ┌──────────────────────────────────────────────┐   │
-│                  │              UserProfile                       │   │
-│                  │  mergeProfile() + formatUserProfile()        │   │
-│                  └──────────────────────────────────────────────┘   │
-│                                    │                                 │
-│                                    ▼                                 │
-│                  ┌──────────────────────────────────────────────┐   │
-│                  │              LLM API                          │   │
-│                  │  (Anthropic / OpenAI — stub 待接入)           │   │
-│                  └──────────────────────────────────────────────┘   │
+│  │   Vite   │───▶│  DeepSeek API (api.deepseek.com)             │   │
+│  │  Proxy   │    │  Authorization: Bearer <key> (服务端注入)     │   │
+│  └──────────┘    └──────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -58,6 +61,22 @@
 ```
 src/index.tsx
   └── src/ui/App.tsx
+        ├── src/context/updateMessage.ts       ← 上下文引擎（浏览器端）
+        │     ├── src/types/chatMessage.ts
+        │     ├── src/config/context.ts
+        │     ├── src/context/tokenEstimator.ts
+        │     ├── src/context/compressor.ts
+        │     │     ├── src/context/tokenEstimator.ts
+        │     │     └── src/context/atomicBoundary.ts
+        │     ├── src/context/hardTruncate.ts
+        │     │     ├── src/context/tokenEstimator.ts
+        │     │     ├── src/context/atomicBoundary.ts
+        │     │     ├── src/profile/mergeProfile.ts
+        │     │     └── src/profile/formatter.ts
+        │     ├── src/context/windowBuilder.ts
+        │     │     └── src/profile/formatter.ts
+        │     └── src/tools/toolPreprocessor.ts
+        │           └── src/context/tokenEstimator.ts
         ├── src/streaming/useStreamResponse.ts
         │     ├── src/streaming/sseParser.ts
         │     ├── src/streaming/jsonDetector.ts
@@ -71,32 +90,20 @@ src/index.tsx
         ├── src/ui/components/StreamBar.tsx
         ├── src/ui/styles.ts
         └── src/ui/mockStream.ts
-
-src/context/updateMessage.ts (服务端核心，不直接 import 于前端)
-  ├── src/types/chatMessage.ts
-  ├── src/config/context.ts
-  ├── src/context/tokenEstimator.ts
-  ├── src/context/compressor.ts
-  │     ├── src/context/tokenEstimator.ts
-  │     └── src/context/atomicBoundary.ts
-  ├── src/context/hardTruncate.ts
-  │     ├── src/context/tokenEstimator.ts
-  │     ├── src/context/atomicBoundary.ts
-  │     ├── src/profile/mergeProfile.ts
-  │     └── src/profile/formatter.ts
-  ├── src/context/windowBuilder.ts
-  │     └── src/profile/formatter.ts
-  └── src/tools/toolPreprocessor.ts
-        └── src/context/tokenEstimator.ts
 ```
 
 ## 数据流：用户发送消息
 
 ```
 1. 用户在 UI 输入文本，点击发送
-2. App.tsx handleSend() 创建 UIMessage，更新 messages state
-3. 若 useMock=true → 调用 createMockSSEStream(MOCK_TOKENS) 构造模拟字节流
-   若 useMock=false → 构造 fetch(url, { body: JSON.stringify(messages) })
+2. App.tsx handleSend() 创建 UIMessage + ChatMessage
+3. sendToApi(userChatMsg):
+   a. updateMessage(window, { userMessage, assistantResponse })
+      → 推入历史 → 检查 token → 压缩/截断 → 返回新窗口
+   b. toModelMessages(window) → 5 层 ChatMessage[]
+   c. 若 useMock=true → createMockSSEStream(MOCK_TOKENS)
+      若 useMock=false → streamDeepSeekChat({ messages })
+        → POST /api/deepseek (Vite proxy → api.deepseek.com)
 4. useStreamResponse.start(source) 启动流消费
 5. consumeStream() 循环：
    a. reader.read() → 原始字节
@@ -108,48 +115,38 @@ src/context/updateMessage.ts (服务端核心，不直接 import 于前端)
 6. flushChunks() 在下一帧前：
    a. 取出 pendingChunksRef 中的所有 chunk
    b. setState: fullText 拼接 TextChunk；chunks 数组追加全部
-7. React 重渲染：
-   a. displayMessages 计算 → 末尾追加 streaming 气泡
-   b. ChatBubble → AssistantContent → 遍历 chunks 渲染
-   c. TextChunk 合并后用 react-markdown 渲染
-   d. CardChunk 渲染为 CardWidget（RouteCard / WeatherCard）
-   e. ErrorChunk 渲染为 ErrorWidget
-8. 流结束 → isLoading=false → 固化 streaming 气泡为普通消息
+7. React 重渲染（与旧版相同）
+8. 流结束 → isLoading=false:
+   a. setMessages 固化 assistant 消息
+   b. lastAssistantRef = assistant ChatMessage（供下一轮使用）
 ```
 
-## 数据流：服务端上下文管理（待接入）
-
-```
-1. POST /api/chat 接收 { messages }
-2. buildInitialWindow({ systemPrompt, userProfile }) 构建初始窗口
-3. 每轮对话：
-   a. toModelMessages(window) → 5 层消息数组
-   b. 发送给 LLM
-   c. LLM 返回 assistantResponse + toolResults
-   d. updateMessage(window, { userMessage, assistantResponse, toolResults })
-      - recentHistory 超限 → compressRecentHistory() → 蒸馏摘要
-      - 仍超限 → hardTruncate() → 收割偏好 + 物理删除
-4. 返回 LLM 的最终文本内容给前端（SSE 流式输出）
-```
-
-## Agent 生命周期（服务端）
+## Agent 生命周期（浏览器端）
 
 ```
 [初始化]
 buildInitialWindow({ systemPrompt, userProfile, memorySummary? })
-  → 创建 5 层空窗口
+  → 创建 5 层空窗口，存入 contextWindowRef
 
 [每轮对话]
-updateMessage(current, { userMessage, assistantResponse?, toolResults? })
+sendToApi(userChatMsg)
+  → updateMessage(current, { userMessage, assistantResponse?, toolResults? })
   → 推入历史 → 检查 token → 压缩/截断 → 返回新窗口
+  → toModelMessages(window) → 发送 API
+
+[流结束]
+useEffect: isLoading true→false
+  → lastAssistantRef = assistant ChatMessage
 
 [上下文压缩]
 compressRecentHistory(window)
   → 从 recentHistory 头部取 batch → LLM 蒸馏 → 合并到 memorySummary
+  （stub：当前为占位实现，接入真实 LLM 后自动生效）
 
 [硬截断]
 hardTruncate(window, budget)
   → 扫描 → updateProfileQuickly() + extractKeyFacts() → splice()
+  （stub：当前 harvest 函数返回 null，硬截断仅做物理删除）
 
 [用户画像更新]
 mergeProfile(current, patch)

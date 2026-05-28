@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useStreamResponse } from "../streaming/useStreamResponse";
-import type { StreamSource } from "../streaming/types";
-import type { ChatMessage } from "../types/chatMessage";
+import type { ChatMessage, UserProfile } from "../types/chatMessage";
 import { streamDeepSeekChat } from "../api/deepseekClient";
 import { createMockSSEStream, MOCK_TOKENS } from "./mockStream";
 import { styles } from "./styles";
@@ -10,6 +9,8 @@ import type { UIMessage } from "./components/ChatBubble";
 import { StreamBar } from "./components/StreamBar";
 import systemPromptRaw from "../prompts/systemPrompt.md?raw";
 import { renderPrompt } from "../prompts/promptLoader";
+import { buildInitialWindow, toModelMessages, updateMessage } from "../context";
+import type { ContextWindow } from "../context";
 
 /**
  * 预设修正指令及对应的剪枝 (pruning) 策略：
@@ -27,19 +28,13 @@ const CORRECTION_PRESETS = [
   { label: "换个风格", reason: "请换一种风格，减少大众景点，增加小众特色和深度体验。", pruning: "annotate" as const },
 ];
 
-/**
- * 将 UIMessage 转为 ChatMessage（DeepSeek API 所需的内部类型）。
- * 用于将对话历史发送给 LLM。
- */
-function uiMessagesToChatMessages(msgs: UIMessage[]): ChatMessage[] {
-  const now = new Date().toISOString();
-  return msgs.map((m, i) => ({
-    id: `msg-${i}`,
-    role: m.role,
-    content: m.content,
-    created_at: now,
-  } as ChatMessage));
-}
+/** 初始空画像 —— 随对话推进由 hardTruncate 中的 updateProfileQuickly 逐步填充 */
+const EMPTY_PROFILE: UserProfile = {
+  user_id: "default",
+  preferences: {},
+  constraints: {},
+  updated_at: new Date().toISOString(),
+};
 
 /**
  * 构造 system prompt：加载模板并替换 {{current_date}}、{{timezone}}、{{user_profile}} 变量。
@@ -54,47 +49,23 @@ function buildSystemPrompt(): string {
   });
 }
 
-/**
- * 启动 DeepSeek 流式请求，将返回的 stream 交给 useStreamResponse 消费。
- * systemPrompt 始终作为 messages[0]（"定海神针"），所有错误由 useStreamResponse 内部的 catch 块处理。
- */
-function startDeepSeekStream(
-  messages: UIMessage[],
-  start: (source: StreamSource) => void
-) {
-  const chatMessages = uiMessagesToChatMessages(messages);
-  const systemMsg: ChatMessage = {
-    id: "system-prompt",
-    role: "system",
-    content: buildSystemPrompt(),
-    created_at: new Date().toISOString(),
-  };
-  streamDeepSeekChat({ messages: [systemMsg, ...chatMessages] })
-    .then((stream) => start({ type: "stream", stream }))
-    .catch((err) => {
-      // 如果 streamDeepSeekChat 本身失败（如 API key 未配置），
-      // 需要手动设置错误状态。这里通过一个"error stream"来传递错误。
-      const errorMsg = err instanceof Error ? err.message : "Unknown error";
-      const encoder = new TextEncoder();
-      const errorStream = new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(
-            encoder.encode(`data: {"choices":[{"delta":{"content":"请求失败: ${errorMsg}"}}]}\n\n`)
-          );
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-          controller.close();
-        },
-      });
-      start({ type: "stream", stream: errorStream });
-    });
-}
-
 export default function App() {
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [input, setInput] = useState("");
   const [useMock, setUseMock] = useState(false);
   const streamResult = useStreamResponse();
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // ── Context 引擎 ──
+  const contextWindowRef = useRef<ContextWindow>(
+    buildInitialWindow({
+      systemPrompt: buildSystemPrompt(),
+      userProfile: EMPTY_PROFILE,
+      memorySummary: undefined,
+    })
+  );
+  /** 上一轮已完成的 assistant 回复，供下一轮 updateMessage 消费 */
+  const lastAssistantRef = useRef<ChatMessage | null>(null);
 
   // 当流式内容更新时，自动滚动到底部
   useEffect(() => {
@@ -121,31 +92,69 @@ export default function App() {
     return [...messages, streamingBubble];
   })();
 
-  function handleSend() {
-    const text = input.trim();
-    if (!text || streamResult.isLoading) return;
+  /**
+   * 通过 context 引擎发送消息到 API：updateMessage → toModelMessages → streamDeepSeekChat。
+   * systemPrompt 始终位于 messages[0]（"定海神针"），后续各层按 5 层结构排列。
+   */
+  async function sendToApi(userChatMsg: ChatMessage) {
+    const result = await updateMessage(contextWindowRef.current, {
+      userMessage: userChatMsg,
+      assistantResponse: lastAssistantRef.current ?? undefined,
+    });
+    contextWindowRef.current = result.window;
+    lastAssistantRef.current = null; // 已消费，清空等待下一轮流结束回填
 
-    const userMsg: UIMessage = { role: "user", content: text };
-    const messagesWithUser = [...messages, userMsg];
-    setMessages(messagesWithUser);
-    setInput("");
+    const modelMessages = toModelMessages(result.window);
 
     if (useMock) {
       streamResult.start({ type: "stream", stream: createMockSSEStream(MOCK_TOKENS) });
     } else {
-      startDeepSeekStream(messagesWithUser, streamResult.start);
+      streamDeepSeekChat({ messages: modelMessages })
+        .then((stream) => streamResult.start({ type: "stream", stream }))
+        .catch((err) => {
+          const errorMsg = err instanceof Error ? err.message : "Unknown error";
+          const encoder = new TextEncoder();
+          const errorStream = new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(
+                encoder.encode(`data: {"choices":[{"delta":{"content":"请求失败: ${errorMsg}"}}]}\n\n`)
+              );
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+              controller.close();
+            },
+          });
+          streamResult.start({ type: "stream", stream: errorStream });
+        });
     }
   }
 
+  async function handleSend() {
+    const text = input.trim();
+    if (!text || streamResult.isLoading) return;
+
+    const userMsg: UIMessage = { role: "user", content: text };
+    setMessages([...messages, userMsg]);
+    setInput("");
+
+    const userChatMsg: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: "user",
+      content: text,
+      created_at: new Date().toISOString(),
+    };
+
+    await sendToApi(userChatMsg);
+  }
+
   /** 中断当前流，按剪枝策略清洗历史，自动发起新请求 */
-  function handleCorrect(reason: string, pruning: "strip" | "annotate") {
+  async function handleCorrect(reason: string, pruning: "strip" | "annotate") {
     if (!streamResult.isLoading) return;
 
-    // 快照当前已输出的内容（在 abort 前保存，因为 start() 会重置 state）
+    // 快照当前已输出的内容（在 start() 重置状态前保存）
     const partialContent = streamResult.fullText;
     const partialChunks = streamResult.chunks;
 
-    // 将 partial 响应固化为一条已中断消息 + 追加用户修正指令
+    // UI：固化中断消息 + 追加修正指令
     const correctionMsg: UIMessage = { role: "user", content: `🔧 ${reason}` };
     const allMessages = (() => {
       const prev = [...messages];
@@ -162,24 +171,30 @@ export default function App() {
       return prev;
     })();
 
-    // UI 始终保持完整历史（用户能看到中断前的 partial 内容）
     setMessages(allMessages);
 
-    // ── 发送给 API 的消息：按剪枝策略清洗 ──
-    let messagesForApi = allMessages;
-    if (pruning === "strip") {
-      // 移除被中断的 assistant 回复 —— 避免错误内容干扰模型判断
-      messagesForApi = allMessages.filter(
-        (m) => !(m.role === "assistant" && m.content.startsWith("~已中断~")),
-      );
+    // 根据剪枝策略决定是否将 partial 回复送入 context 窗口
+    // strip：partial 不进入窗口 —— assistantResponse 保持为 undefined，避免错误内容干扰模型
+    // annotate：partial 进入窗口（标记 ~已中断~），模型可参考其结构/风格
+    if (pruning === "annotate" && partialContent) {
+      lastAssistantRef.current = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: `~已中断~\n${partialContent}`,
+        created_at: new Date().toISOString(),
+      };
     }
-    // annotate 策略：保留全部，~已中断~ 标记即是最小上下文中和
+    // strip 且 lastAssistantRef 中有上一轮合法回复：保留它，让修正指令与上一轮回复配对
+    // strip 且 lastAssistantRef 为 null：不做任何事，修正指令独立发送
 
-    if (useMock) {
-      streamResult.start({ type: "stream", stream: createMockSSEStream(MOCK_TOKENS) });
-    } else {
-      startDeepSeekStream(messagesForApi, streamResult.start);
-    }
+    const correctionChatMsg: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: "user",
+      content: `🔧 ${reason}`,
+      created_at: new Date().toISOString(),
+    };
+
+    await sendToApi(correctionChatMsg);
   }
 
   // 流结束时固化消息（由 isLoading: false → 触发）
@@ -194,6 +209,14 @@ export default function App() {
           { role: "assistant" as const, content: streamResult.fullText, chunks: streamResult.chunks, isStreaming: false },
         ];
       });
+
+      // 将完整 assistant 回复写入 ref，供下一轮 sendToApi → updateMessage 使用
+      lastAssistantRef.current = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: streamResult.fullText,
+        created_at: new Date().toISOString(),
+      };
     }
     prevLoading.current = streamResult.isLoading;
   }, [streamResult.isLoading, streamResult.fullText]);
